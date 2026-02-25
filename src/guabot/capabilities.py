@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import datetime as _dt
 import subprocess
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Protocol
+from typing import Any, Dict, List, Literal, Protocol
 
 
 class Capability(Protocol):
     """能力抽象接口（工具 / Skill / MCP）。"""
 
     name: str
+    kind: Literal["tool", "skill"]
     description: str
 
     def invoke(self, arguments: Dict[str, Any]) -> Dict[str, Any]:  # pragma: no cover - 协议本身无需测试
@@ -18,13 +19,23 @@ class Capability(Protocol):
 
 
 @dataclass
-class TimeCapability:
-    """示例能力：返回当前时间（UTC）。
+class CapabilityDescriptor:
+    """对外暴露给 LLM 与编排层的能力元信息。"""
 
-    仅用于验证工具调用链路，不涉及具体业务。
-    """
+    name: str
+    kind: Literal["tool", "skill"]
+    description: str
+    input_schema: Dict[str, Any]
+    output_schema: Dict[str, Any]
+    enabled_for_llm: bool = True
+
+
+@dataclass
+class TimeCapability:
+    """示例能力：返回当前时间（UTC）。"""
 
     name: str = "time.now"
+    kind: Literal["tool", "skill"] = "tool"
     description: str = "返回当前 UTC 时间戳，通常用于调试或在回复中展示时间信息。无参数。"
 
     def invoke(self, arguments: Dict[str, Any] | None = None) -> Dict[str, Any]:
@@ -34,16 +45,10 @@ class TimeCapability:
 
 @dataclass
 class BashCapability:
-    """简单的 Bash 工具能力。
-
-    - 参数：
-      - `cmd`: 必填，要执行的命令字符串，例如 `ls -la`、`cat README.md`。
-    - 约束：
-      - 仅用于短时间、只读或轻量调试命令；
-      - 默认超时时间 5 秒，并截断输出，避免卡死或输出过大。
-    """
+    """简单的 Bash 工具能力。"""
 
     name: str = "shell.bash"
+    kind: Literal["tool", "skill"] = "tool"
     description: str = "在运行环境中执行短时 Bash 命令，返回 exit_code/stdout/stderr，用于调试和查看状态。参数: cmd(str)。"
     timeout_seconds: float = 5.0
     max_output_chars: int = 4000
@@ -78,11 +83,10 @@ class BashCapability:
 
 @dataclass
 class LsCapability:
-    """列出指定目录（非递归）的文件列表。
+    """列出指定目录（非递归）的文件列表。"""
 
-    - `path`: 要列出的路径，默认 "."（当前工作目录）。
-    """
     name: str = "fs.ls"
+    kind: Literal["tool", "skill"] = "tool"
     description: str = "列出指定目录下的直接子项（文件和子目录），不递归。参数: path(str, 可选, 默认当前目录)。"
 
     def invoke(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -98,68 +102,18 @@ class LsCapability:
         try:
             entries = []
             for entry in sorted(path.iterdir()):
-                entries.append(
-                    {
-                        "name": entry.name,
-                        "is_dir": entry.is_dir(),
-                    }
-                )
+                entries.append({"name": entry.name, "is_dir": entry.is_dir()})
             return {"path": str(path), "entries": entries}
         except Exception as exc:  # pragma: no cover - 防御性分支
             return {"path": str(path), "error": repr(exc)}
 
 
-class CapabilityRegistry:
-    """简单的能力注册表。
-
-    未来可以在此处挂接真实的 Skills/MCP 客户端，目前仅提供内存级实现。
-    """
-
-    def __init__(self) -> None:
-        self._capabilities: Dict[str, Capability] = {}
-
-    def register(self, capability: Capability) -> None:
-        self._capabilities[capability.name] = capability
-
-    def get(self, name: str) -> Capability | None:
-        return self._capabilities.get(name)
-
-    def invoke(self, name: str, arguments: Dict[str, Any] | None = None) -> Dict[str, Any]:
-        capability = self.get(name)
-        if capability is None:
-            raise KeyError(f"Capability '{name}' not found")
-        return capability.invoke(arguments or {})
-
-    def available_names(self) -> List[str]:
-        """返回当前已注册能力名称列表。"""
-
-        return list(self._capabilities.keys())
-
-    def available_details(self) -> List[Dict[str, Any]]:
-        """返回带描述的能力信息，供 LLM 构建决策上下文使用。"""
-
-        details: List[Dict[str, Any]] = []
-        for cap in self._capabilities.values():
-            details.append(
-                {
-                    "name": cap.name,
-                    "description": getattr(cap, "description", ""),
-                }
-            )
-        return details
-
-
 @dataclass
 class ReadFileCapability:
-    """读取本地文本文件的部分内容。
-
-    - 参数：
-      - `path`: 必填，要读取的文件路径；
-    - 行为：
-      - 读取文件前若干字节（默认 4096），并尝试按 UTF-8 解码；
-      - 如果文件较大，仅返回前缀内容，并在结果中标记 `truncated`。"""
+    """读取本地文本文件的部分内容。"""
 
     name: str = "fs.read_file"
+    kind: Literal["tool", "skill"] = "tool"
     description: str = "读取本地文本文件的前若干字节，用于快速查看文件内容。参数: path(str)。"
     max_bytes: int = 4096
 
@@ -184,12 +138,120 @@ class ReadFileCapability:
         truncated = len(data) > self.max_bytes
         prefix = data[: self.max_bytes]
         content = prefix.decode("utf-8", errors="replace")
+        return {"path": str(path), "content": content, "truncated": truncated}
 
+
+@dataclass
+class ErrorCountSkill:
+    """示例 Skill：返回“今日错误数”。"""
+
+    name: str = "skill.error_count"
+    kind: Literal["tool", "skill"] = "skill"
+    description: str = "查询今天的错误数。参数: service(str, 可选), unavailable(bool, 可选)。"
+
+    def invoke(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        if bool(arguments.get("unavailable")):
+            return {"error": "service temporarily unavailable"}
+        service = str(arguments.get("service", "core-api"))
         return {
-            "path": str(path),
-            "content": content,
-            "truncated": truncated,
+            "service": service,
+            "date": _dt.datetime.utcnow().strftime("%Y-%m-%d"),
+            "error_count": 3,
         }
+
+
+@dataclass
+class VersionInfoSkill:
+    """示例 Skill：返回当前版本。"""
+
+    name: str = "skill.version_info"
+    kind: Literal["tool", "skill"] = "skill"
+    description: str = "查询当前部署版本。参数: service(str, 可选), unavailable(bool, 可选)。"
+
+    def invoke(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        if bool(arguments.get("unavailable")):
+            raise RuntimeError("version service unavailable")
+        service = str(arguments.get("service", "core-api"))
+        return {"service": service, "version": "v0.1.0"}
+
+
+class CapabilityRegistry:
+    """简单的能力注册表。"""
+
+    def __init__(self) -> None:
+        self._capabilities: Dict[str, Capability] = {}
+
+    def register(self, capability: Capability) -> None:
+        self._capabilities[capability.name] = capability
+
+    def get(self, name: str) -> Capability | None:
+        return self._capabilities.get(name)
+
+    def invoke(self, name: str, arguments: Dict[str, Any] | None = None) -> Dict[str, Any]:
+        capability = self.get(name)
+        if capability is None:
+            raise KeyError(f"Capability '{name}' not found")
+        return capability.invoke(arguments or {})
+
+    def available_names(self) -> List[str]:
+        return list(self._capabilities.keys())
+
+    def _build_input_schema(self, name: str) -> Dict[str, Any]:
+        if name == "shell.bash":
+            return {
+                "type": "object",
+                "properties": {"cmd": {"type": "string"}},
+                "required": ["cmd"],
+            }
+        if name == "fs.read_file":
+            return {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+            }
+        if name in {"fs.ls", "skill.error_count", "skill.version_info"}:
+            return {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "service": {"type": "string"},
+                    "unavailable": {"type": "boolean"},
+                },
+                "required": [],
+            }
+        return {"type": "object", "properties": {}, "required": []}
+
+    def describe(self, name: str) -> CapabilityDescriptor:
+        cap = self.get(name)
+        if cap is None:
+            raise KeyError(f"Capability '{name}' not found")
+        return CapabilityDescriptor(
+            name=cap.name,
+            kind=getattr(cap, "kind", "tool"),
+            description=getattr(cap, "description", ""),
+            input_schema=self._build_input_schema(name),
+            output_schema={"type": "object"},
+            enabled_for_llm=True,
+        )
+
+    def available_details(self) -> List[Dict[str, Any]]:
+        return [
+            {
+                "name": d["name"],
+                "kind": d["kind"],
+                "description": d["description"],
+            }
+            for d in self.available_descriptors(llm_only=True)
+        ]
+
+    def available_descriptors(self, llm_only: bool = True) -> List[Dict[str, Any]]:
+        descriptors: List[Dict[str, Any]] = []
+        for name in self.available_names():
+            descriptor = self.describe(name)
+            if llm_only and not descriptor.enabled_for_llm:
+                continue
+            descriptors.append(asdict(descriptor))
+        return descriptors
 
 
 def default_registry() -> CapabilityRegistry:
@@ -200,4 +262,6 @@ def default_registry() -> CapabilityRegistry:
     registry.register(BashCapability())
     registry.register(LsCapability())
     registry.register(ReadFileCapability())
+    registry.register(ErrorCountSkill())
+    registry.register(VersionInfoSkill())
     return registry

@@ -5,7 +5,10 @@ from pathlib import Path
 from typing import Dict, Optional
 
 import os
-import tomllib
+try:  # py3.11+
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - 兼容本地 py3.10 测试环境
+    import tomli as tomllib
 
 
 @dataclass
