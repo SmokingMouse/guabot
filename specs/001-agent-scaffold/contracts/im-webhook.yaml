@@ -1,0 +1,42 @@
+openapi: 3.0.0
+info:
+  title: Guabot Agent Scaffold - IM Webhook
+  version: 0.1.0
+paths:
+  /im/webhook/{channel}:
+    post:
+      summary: 接收来自 IM 渠道的消息回调
+      description: >-
+        由各个 IM 平台配置的 HTTP 回调地址，用于接收用户发送给机器人的消息，并触发
+        WaitingForMsg → AgentExec → SendMsg 流程。
+      parameters:
+        - in: path
+          name: channel
+          required: true
+          schema:
+            type: string
+          description: 渠道标识，例如 `feishu`、`slack`。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: IM 平台回调消息的标准化结构（经适配器转换）。
+              properties:
+                conversation_id:
+                  type: string
+                user_id:
+                  type: string
+                message_id:
+                  type: string
+                text:
+                  type: string
+                raw_payload:
+                  type: object
+      responses:
+        "200":
+          description: 接收成功，IM 平台一般不关心具体内容
+        "4XX":
+          description: 请求格式错误或验签失败
+

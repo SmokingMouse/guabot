@@ -1,0 +1,20 @@
+[llm]
+# OpenRouter 或 OpenAI 的 API Base，例如：
+# OpenRouter: "https://openrouter.ai/api/v1"
+# OpenAI:     "https://api.openai.com/v1"
+endpoint = "https://openrouter.ai/api/v1"
+
+# 运行时将此值替换为你的真实 token，例如 OpenRouter 的 sk-or-...
+api_key = "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"
+
+# 模型名称，例如：
+# "openrouter/openai/gpt-4.1-mini" 或 "gpt-4.1-mini"
+model = "z-ai/glm-5"
+
+# 超时时间（秒）
+timeout = 10.0
+
+[channels.demo]
+default_memory_window = 20
+max_memory_window = 200
+

@@ -1,0 +1,60 @@
+openapi: 3.0.0
+info:
+  title: Guabot LLM Tools Flow
+  version: 0.1.0
+  description: |
+    面向内部的 LLM + Tools/Skills 调用链路抽象契约，用于描述 IM 入口到能力层之间
+    的交互。此处契约聚焦于 HTTP/Webhook 维度的外部交互，不涉及内部 Python 实现细节。
+
+paths:
+  /im/webhook/guabot:
+    post:
+      summary: 接收 IM 平台的入站消息并触发 LLM 决策
+      description: |-
+        IM 平台通过该 Webhook 推送用户消息，Guabot 在内部构建会话上下文，调用 LLM
+        决策层，并在必要时触发工具/Skills 调用，最终返回给 IM 平台的回复内容。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                session_id:
+                  type: string
+                  description: IM 会话唯一标识
+                user_id:
+                  type: string
+                  description: 用户匿名 ID 或内部账号 ID
+                channel:
+                  type: string
+                  description: 渠道标识（如具体 IM 平台/机器人）
+                message:
+                  type: string
+                  description: 用户发送的消息内容
+              required:
+                - session_id
+                - user_id
+                - channel
+                - message
+      responses:
+        "200":
+          description: 成功处理并返回给 IM 平台的回复
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reply:
+                    type: string
+                    description: 返回给用户的自然语言回复
+                  trace_id:
+                    type: string
+                    description: 与本次处理相关的执行轨迹 ID，便于后续调试
+                required:
+                  - reply
+        "4xx":
+          description: 请求格式错误或鉴权失败（如需）
+        "5xx":
+          description: 服务内部错误或下游依赖不可用
+
