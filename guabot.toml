@@ -1,5 +1,17 @@
+[guabot]
+data_dir = ".guabot"
+
+[skills]
+default_dirs = [".guabot/skills"]
+extension_dirs = [".agents"]
+
+[memory]
+# 每隔多少分钟运行一次 memory-extractor（0 = 禁用）
+extractor_interval_minutes = 30
+# 每隔多少分钟运行一次 profile-updater（0 = 禁用）
+profile_interval_minutes = 60
+
 [llm]
-# OpenRouter 或 OpenAI 的 API Base，例如：
 # OpenRouter: "https://openrouter.ai/api/v1"
 # OpenAI:     "https://api.openai.com/v1"
 endpoint = "https://openrouter.ai/api/v1"
@@ -18,3 +30,62 @@ timeout = 10.0
 default_memory_window = 20
 max_memory_window = 200
 
+[channels.telegram]
+token = "8503078315:AAH42VTPQZ3gZlELP_1cD4oHOQQj3VrlYmo"
+poll_interval_seconds = 2.0
+message_timeout_seconds = 60.0
+max_concurrent_conversations = 10
+default_memory_window = 20
+max_memory_window = 200
+
+# [[mcp.servers]]
+# id = "fs"
+# command = ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+
+[[mcp.servers]]
+id = "fs"
+command = ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+
+[[mcp.servers]]
+id = "local"
+command = ["python", "/home/smokingmouse/python/ai/guabot/tools/mcp_echo_server.py"]
+
+# ============================================
+# Phase 1 P0 功能配置
+# ============================================
+
+# 上下文压缩配置 (009-context-compression)
+[context_compression]
+enabled = true
+# 当 context 使用率超过 80% 时触发压缩
+trigger_threshold = 0.8
+# 压缩后目标使用率降至 60%
+target_threshold = 0.6
+# 保留最近 5 轮对话不压缩
+keep_recent_turns = 5
+# 用于生成摘要的模型 (使用快速模型降低延迟)
+compression_model = "claude-haiku-4-5"
+# 每对消息的最大摘要 tokens
+max_summary_tokens = 100
+
+# Tool 重试配置 (010-tool-retry)
+[tool_retry]
+enabled = true
+# 默认最大重试次数
+default_max_retries = 3
+# 退避基数 (秒): 1s, 2s, 4s, 8s...
+default_backoff_base = 1.0
+# 总重试时间上限 (秒)
+max_total_retry_time = 30.0
+# 可重试的错误类型
+retryable_errors = ["NetworkError", "TimeoutError", "RateLimitError", "ConnectionError"]
+# 不可重试的错误类型
+non_retryable_errors = ["AuthenticationError", "InvalidInputError", "PermissionError"]
+
+# Skill 超时配置 (011-skill-timeout)
+[skill_timeout]
+enabled = true
+# 默认超时时间 (秒)
+default_timeout = 60.0
+# 优雅终止等待时间 (秒)
+grace_period = 5.0

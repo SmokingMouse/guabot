@@ -1,0 +1,26 @@
+.gitnexus
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+dist/
+*.egg-info/
+
+# Universal
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
+.idea/
+
+# Guabot skills
+.guabot/
+
+# Trace viewer
+traces/viewer/node_modules/
+traces/viewer/.next/
